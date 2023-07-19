@@ -1,0 +1,142 @@
+# 导入所需的库
+import cv2
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg') # 指定使用"Qt5Agg"后端
+import matplotlib.pyplot as plt
+
+# 读取图片
+img = cv2.imread('C:\\1.jpg')
+print('已读取图片，图片尺寸为：', img.shape)
+cv2.imshow('原始图片', img)
+cv2.waitKey(0)
+
+# 转换到HSV颜色空间
+hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+print('已转换到HSV颜色空间')
+cv2.imshow('HSV图片', hsv)
+cv2.waitKey(0)
+
+# 创建一个窗口，用来显示结果
+cv2.namedWindow('result')
+
+# 初始化mask为空数组
+mask = np.array([])
+
+# 定义一个回调函数，用来处理滑动条的变化
+def on_trackbar(val):
+    # 声明mask是全局变量
+    global mask
+    # 获取滑动条的位置
+    h = cv2.getTrackbarPos('h', 'result')
+    s = cv2.getTrackbarPos('s', 'result')
+    v = cv2.getTrackbarPos('v', 'result')
+    # 根据滑动条的位置设置颜色阈值
+    lower = np.array([h, s, v])
+    upper = np.array([180, 255, 255])
+    # 颜色分割，提取光伏板区域
+    mask = cv2.inRange(hsv, lower, upper)
+    res = cv2.bitwise_and(img, img, mask=mask)
+    print('已进行颜色分割，提取光伏板区域')
+    # 显示结果
+    cv2.imshow('result', res)
+
+# 创建三个滑动条，分别控制H、S、V通道的最小值
+cv2.createTrackbar('h', 'result', 0, 179, on_trackbar)
+cv2.createTrackbar('s', 'result', 0, 255, on_trackbar)
+cv2.createTrackbar('v', 'result', 0, 255, on_trackbar)
+# 调用回调函数，更新mask的值
+on_trackbar(0)
+# 等待用户按键退出
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+# 边缘提取，采用Canny算子
+edges = cv2.Canny(mask, 100, 200)
+print('已进行边缘提取，采用Canny算子')
+cv2.imshow('边缘提取图片', edges)
+cv2.waitKey(0)
+# 创建一个窗口，用来显示结果
+cv2.namedWindow('processed')
+# 定义一个新的回调函数，用来处理滑动条的变化
+def on_trackbar_2(val):
+    # 获取滑动条的位置
+    k = cv2.getTrackbarPos('k', 'processed')
+    e = cv2.getTrackbarPos('e', 'processed')
+    d = cv2.getTrackbarPos('d', 'processed')
+    s = cv2.getTrackbarPos('s', 'processed')
+    # 根据滑动条的位置设置腐蚀膨胀、滤波和按位与操作的参数
+    kernel = np.ones((k, k), np.uint8) # kernel的大小为k*k
+    global edges_1 # 声明edges_1是全局变量
+    edges_1 = cv2.erode(edges, kernel, iterations=e) # 腐蚀e次
+    edges_1 = cv2.dilate(edges_1, kernel, iterations=d) # 膨胀d次
+    # 判断k是否为偶数，如果是的话，就加1变成奇数
+    if k % 2 == 0:
+        k += 1
+    edges_1 = cv2.GaussianBlur(edges_1, (k, k), s) # sigma值为s
+    edges_1 = cv2.bitwise_and(edges_1, mask)
+    print('已进行腐蚀膨胀、滤波和按位与操作，去除噪声和细节')
+    # 显示结果
+    cv2.imshow('processed', edges_1)
+# 创建四个滑动条，分别控制kernel的大小、腐蚀的次数、膨胀的次数和sigma值
+cv2.createTrackbar('k', 'processed', 1, 10, on_trackbar_2)
+cv2.createTrackbar('e', 'processed', 0, 10, on_trackbar_2)
+cv2.createTrackbar('d', 'processed', 0, 10, on_trackbar_2)
+cv2.createTrackbar('s', 'processed', 0, 10, on_trackbar_2)
+# 调用回调函数，更新edges_1的值
+on_trackbar_2(0)
+# 等待用户按键退出
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+# 轮廓查找，多边形逼近和面积计算
+# 把mask改成edges_1
+contours, hierarchy = cv2.findContours(edges_1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+count = 0 # 光伏板的数目
+
+# 创建一个窗口，用来显示结果
+cv2.namedWindow('contours')
+
+# 在回调函数之外，先把原始图片保存为一个变量
+original_img = cv2.imread('C:\\1.jpg')
+# 在回调函数之外，先把原始图片的副本保存为一个变量
+img_copy = original_img.copy()
+
+# 定义一个新的回调函数，用来处理滑动条的变化
+def on_trackbar_3(val):
+    # 获取滑动条的位置
+    e = cv2.getTrackbarPos('e', 'contours')
+    # 根据滑动条的位置设置多边形逼近的epsilon值
+    epsilon = e / 1000 # epsilon值为e/1000
+    # 遍历所有轮廓
+    for cnt in contours:
+        # 多边形逼近，获取轮廓的顶点数
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+        # 面积计算，过滤掉太小或太大的轮廓
+        area = cv2.contourArea(cnt)
+        if area > 100 and area < 100000:
+            # 绘制轮廓和顶点数
+            # 把img变量赋值为原始图片的副本，以便重新绘制轮廓
+            img = img_copy # 使用之前保存的副本
+            cv2.drawContours(img, [approx], 0, (0, 0, 255), 2)
+            cv2.putText(img, str(len(approx)), (approx[0][0][0], approx[0][0][1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            # 数目加一
+            global count # 声明count是全局变量
+            count += 1
+
+    # 显示结果
+    print('已进行轮廓查找，多边形逼近和面积计算')
+    print('光伏板的数目是：', count)
+    cv2.imshow('contours', img)
+    # 把count变量赋值为0，以便下次重新计算
+    # 在回调函数之内赋值为0，而不是在回调函数之外
+    count = 0
+
+# 创建一个滑动条，控制多边形逼近的epsilon值
+cv2.createTrackbar('e', 'contours', 10, 100, on_trackbar_3)
+
+# 调用回调函数，更新img的值
+on_trackbar_3(10)
+
+# 等待用户按键退出
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
